@@ -6,6 +6,8 @@ import seaborn as sns
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import confusion_matrix, classification_report, precision_recall_curve
 import warnings
 warnings.filterwarnings("ignore")
@@ -106,7 +108,7 @@ if st.sidebar.checkbox("Afficher l'analyse exploratoire"):
 # Prétraitement des données
 st.sidebar.header("Prétraitement des Données")
 
-def preprocess_data(df):
+def preprocess_data(df, fit_mode=True, feature_columns=None):
     # Copie des données
     data = df.copy()
     
@@ -117,7 +119,6 @@ def preprocess_data(df):
             data[col] = data[col].astype("category")
     
     # Gestion des valeurs manquantes (exemple simplifié)
-    # Dans une application réelle, il faudrait un traitement plus sophistiqué
     numerical_cols = ['LOAN', 'MORTDUE', 'VALUE', 'YOJ', 'DEROG', 'DELINQ', 'CLAGE', 'NINQ', 'CLNO', 'DEBTINC']
     
     for col in numerical_cols:
@@ -125,7 +126,24 @@ def preprocess_data(df):
             data[col].fillna(data[col].median(), inplace=True)
     
     # Encodage des variables catégorielles
-    data = pd.get_dummies(data, columns=['REASON', 'JOB'], drop_first=True)
+    if fit_mode:
+        # Mode entraînement - créer les dummy variables
+        data = pd.get_dummies(data, columns=['REASON', 'JOB'], drop_first=True)
+        # Sauvegarder les colonnes pour la prédiction
+        st.session_state['feature_columns'] = data.drop('BAD', axis=1).columns.tolist()
+    else:
+        # Mode prédiction - utiliser les mêmes colonnes que lors de l'entraînement
+        data = pd.get_dummies(data, columns=['REASON', 'JOB'], drop_first=False)
+        
+        # S'assurer que nous avons toutes les colonnes nécessaires
+        if feature_columns is not None:
+            # Ajouter les colonnes manquantes avec des valeurs 0
+            for col in feature_columns:
+                if col not in data.columns:
+                    data[col] = 0
+            
+            # Réorganiser les colonnes dans le même ordre
+            data = data[feature_columns + ['BAD'] if 'BAD' in data.columns else feature_columns]
     
     return data
 
@@ -138,7 +156,19 @@ if st.sidebar.checkbox("Afficher les données après prétraitement"):
 # Modélisation
 st.sidebar.header("Modélisation")
 
-def train_model(data):
+# Sélection du modèle
+model_choice = st.sidebar.selectbox(
+    "Choisissez le modèle de prédiction:",
+    ["Forêt Aléatoire", "Régression Logistique", "Arbre de Décision"],
+    index=0
+)
+
+# Paramètres du modèle selon le choix
+if model_choice == "Arbre de Décision":
+    max_depth = st.sidebar.slider("Profondeur maximale de l'arbre", 1, 20, 10)
+    min_samples_split = st.sidebar.slider("Échantillons minimum pour diviser", 2, 20, 2)
+
+def train_model(data, model_type="Forêt Aléatoire"):
     # Préparation des données
     X = data.drop('BAD', axis=1)
     y = data['BAD']
@@ -151,18 +181,31 @@ def train_model(data):
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
     
-    # Entraînement du modèle
-    model = RandomForestClassifier(n_estimators=100, random_state=42)
+    # Sélection et entraînement du modèle
+    if model_type == "Forêt Aléatoire":
+        model = RandomForestClassifier(n_estimators=100, random_state=42)
+    elif model_type == "Régression Logistique":
+        model = LogisticRegression(random_state=42, max_iter=1000)
+    elif model_type == "Arbre de Décision":
+        model = DecisionTreeClassifier(
+            max_depth=max_depth,
+            min_samples_split=min_samples_split,
+            random_state=42
+        )
+    else:
+        model = RandomForestClassifier(n_estimators=100, random_state=42)
+    
     model.fit(X_train_scaled, y_train)
     
-    return model, X_test_scaled, y_test, scaler
+    return model, X_test_scaled, y_test, scaler, X_train_scaled, y_train, X.columns.tolist()
 
 if st.sidebar.checkbox("Entraîner le modèle"):
     st.header("🤖 Modèle de Prédiction")
+    st.write(f"**Modèle sélectionné :** {model_choice}")
     
-    with st.spinner("Entraînement du modèle en cours..."):
-        processed_data = preprocess_data(loan_default_dataset)
-        model, X_test, y_test, scaler = train_model(processed_data)
+    with st.spinner(f"Entraînement du modèle {model_choice} en cours..."):
+        processed_data = preprocess_data(loan_default_dataset, fit_mode=True)
+        model, X_test, y_test, scaler, X_train, y_train, feature_names = train_model(processed_data, model_choice)
         
         # Évaluation du modèle
         y_pred = model.predict(X_test)
@@ -186,11 +229,26 @@ if st.sidebar.checkbox("Entraîner le modèle"):
             ax.set_ylabel('Réel')
             ax.set_title('Matrice de Confusion')
             st.pyplot(fig)
+        
+        # Stocker le modèle et les informations dans la session
+        st.session_state['trained_model'] = model
+        st.session_state['scaler'] = scaler
+        st.session_state['model_trained'] = True
+        st.session_state['model_type'] = model_choice
+        st.session_state['feature_names'] = feature_names
+        
+        st.success("Modèle entraîné avec succès!")
 
 # Prédiction en temps réel
 st.sidebar.header("Prédiction")
 
 st.header("🎯 Prédire le Risque de Défaut")
+
+# Afficher le modèle sélectionné
+if 'model_trained' in st.session_state and st.session_state['model_trained']:
+    st.write(f"**Modèle utilisé pour la prédiction :** {st.session_state['model_type']}")
+else:
+    st.warning("Veuillez d'abord entraîner un modèle en cochant 'Entraîner le modèle' dans la sidebar.")
 
 # Formulaire de saisie
 st.subheader("Saisissez les informations du client:")
@@ -217,43 +275,79 @@ credit_lines = st.number_input("Lignes de crédit (CLNO)", min_value=0, value=20
 debt_income_ratio = st.number_input("Ratio dette/revenu (DEBTINC)", min_value=0.0, value=35.0)
 
 if st.button("Prédire le risque"):
-    # Préparation des données pour la prédiction
-    input_data = {
-        'LOAN': loan_amount,
-        'MORTDUE': mortdue,
-        'VALUE': property_value,
-        'YOJ': years_job,
-        'DEROG': derogatory_reports,
-        'DELINQ': delinquent,
-        'CLAGE': credit_age,
-        'NINQ': recent_inquiries,
-        'CLNO': credit_lines,
-        'DEBTINC': debt_income_ratio,
-        'REASON_HomeImp': 1 if reason == 'HomeImp' else 0,
-        'JOB_Office': 1 if job == 'Office' else 0,
-        'JOB_ProfExe': 1 if job == 'ProfExe' else 0,
-        'JOB_Mgr': 1 if job == 'Mgr' else 0,
-        'JOB_Self': 1 if job == 'Self' else 0,
-        'JOB_Sales': 1 if job == 'Sales' else 0
-    }
-    
-    # Conversion en DataFrame
-    input_df = pd.DataFrame([input_data])
-    
-    # Prédiction (simulée - dans une vraie application, vous utiliseriez le modèle entraîné)
-    risk_probability = 0.15  # Exemple
-    
-    st.subheader("Résultat de la Prédiction")
-    
-    if risk_probability < 0.3:
-        st.success(f"✅ **FAIBLE RISQUE** - Probabilité de défaut: {risk_probability:.1%}")
-        st.info("Recommandation: Prêt approuvé")
-    elif risk_probability < 0.6:
-        st.warning(f"⚠️ **RISQUE MODÉRÉ** - Probabilité de défaut: {risk_probability:.1%}")
-        st.info("Recommandation: Analyse supplémentaire recommandée")
+    # Vérifier si un modèle est entraîné
+    if 'model_trained' not in st.session_state or not st.session_state['model_trained']:
+        st.error("Veuillez d'abord entraîner un modèle en cochant 'Entraîner le modèle' dans la sidebar.")
     else:
-        st.error(f"🚨 **HAUT RISQUE** - Probabilité de défaut: {risk_probability:.1%}")
-        st.info("Recommandation: Prêt non recommandé")
+        try:
+            # Préparation des données pour la prédiction
+            input_data = {
+                'LOAN': loan_amount,
+                'MORTDUE': mortdue,
+                'VALUE': property_value,
+                'YOJ': years_job,
+                'DEROG': derogatory_reports,
+                'DELINQ': delinquent,
+                'CLAGE': credit_age,
+                'NINQ': recent_inquiries,
+                'CLNO': credit_lines,
+                'DEBTINC': debt_income_ratio,
+                'REASON': reason,
+                'JOB': job
+            }
+            
+            # Conversion en DataFrame
+            input_df = pd.DataFrame([input_data])
+            
+            # Prétraiter les données de la même manière que lors de l'entraînement
+            input_processed = preprocess_data(input_df, fit_mode=False, feature_columns=st.session_state['feature_names'])
+            
+            # Supprimer BAD s'il existe (pour la prédiction)
+            if 'BAD' in input_processed.columns:
+                input_processed = input_processed.drop('BAD', axis=1)
+            
+            # S'assurer que toutes les colonnes sont présentes et dans le bon ordre
+            missing_cols = set(st.session_state['feature_names']) - set(input_processed.columns)
+            for col in missing_cols:
+                input_processed[col] = 0
+            
+            # Réorganiser les colonnes
+            input_processed = input_processed[st.session_state['feature_names']]
+            
+            # Standardisation des données
+            input_scaled = st.session_state['scaler'].transform(input_processed)
+            
+            # Prédiction avec le modèle entraîné
+            model = st.session_state['trained_model']
+            risk_probability = model.predict_proba(input_scaled)[0][1]
+            
+            st.subheader("Résultat de la Prédiction")
+            
+            if risk_probability < 0.3:
+                st.success(f"✅ **FAIBLE RISQUE** - Probabilité de défaut: {risk_probability:.1%}")
+                st.info("Recommandation: Prêt approuvé")
+            elif risk_probability < 0.6:
+                st.warning(f"⚠️ **RISQUE MODÉRÉ** - Probabilité de défaut: {risk_probability:.1%}")
+                st.info("Recommandation: Analyse supplémentaire recommandée")
+            else:
+                st.error(f"🚨 **HAUT RISQUE** - Probabilité de défaut: {risk_probability:.1%}")
+                st.info("Recommandation: Prêt non recommandé")
+            
+            # Afficher des informations supplémentaires selon le modèle
+            st.write(f"**Modèle utilisé :** {st.session_state['model_type']}")
+            
+            # Graphique de la probabilité
+            fig, ax = plt.subplots(figsize=(8, 2))
+            ax.barh(['Probabilité de défaut'], [risk_probability], color='salmon', alpha=0.7)
+            ax.barh(['Probabilité de remboursement'], [1-risk_probability], color='lightgreen', alpha=0.7)
+            ax.set_xlim(0, 1)
+            ax.set_xlabel('Probabilité')
+            ax.set_title('Distribution des Probabilités de Prédiction')
+            st.pyplot(fig)
+            
+        except Exception as e:
+            st.error(f"Erreur lors de la prédiction: {str(e)}")
+            st.info("Assurez-vous que le modèle a été correctement entraîné et que toutes les colonnes nécessaires sont présentes.")
 
 # Footer
 st.markdown("---")
@@ -270,16 +364,79 @@ st.sidebar.header("Fonctionnalités Avancées")
 if st.sidebar.checkbox("Afficher l'importance des caractéristiques"):
     st.header("📈 Importance des Caractéristiques")
     
-    # Exemple d'importance des features (simulé)
-    features = ['DEBTINC', 'DELINQ', 'DEROG', 'CLAGE', 'YOJ', 'LOAN', 'VALUE', 'NINQ', 'CLNO', 'MORTDUE']
-    importance = [0.25, 0.18, 0.15, 0.12, 0.08, 0.07, 0.06, 0.05, 0.03, 0.01]
-    
-    fig, ax = plt.subplots(figsize=(10, 6))
-    y_pos = np.arange(len(features))
-    ax.barh(y_pos, importance, color='skyblue')
-    ax.set_yticks(y_pos)
-    ax.set_yticklabels(features)
-    ax.set_xlabel('Importance')
-    ax.set_title('Importance des Caractéristiques dans la Prédiction')
-    plt.tight_layout()
-    st.pyplot(fig)
+    # Vérifier si un modèle est entraîné
+    if 'model_trained' not in st.session_state or not st.session_state['model_trained']:
+        st.warning("Veuillez d'abord entraîner un modèle pour voir l'importance des caractéristiques.")
+    else:
+        model = st.session_state['trained_model']
+        model_type = st.session_state['model_type']
+        
+        # Préparer les noms de caractéristiques
+        feature_names = st.session_state['feature_names']
+        
+        # Obtenir l'importance des caractéristiques selon le modèle
+        if model_type == "Forêt Aléatoire" or model_type == "Arbre de Décision":
+            if hasattr(model, 'feature_importances_'):
+                importance = model.feature_importances_
+                
+                # Créer un DataFrame pour l'importance
+                feature_importance_df = pd.DataFrame({
+                    'feature': feature_names,
+                    'importance': importance
+                }).sort_values('importance', ascending=True)
+                
+                # Tracer le graphique
+                fig, ax = plt.subplots(figsize=(10, 8))
+                y_pos = np.arange(len(feature_importance_df))
+                ax.barh(y_pos, feature_importance_df['importance'], color='skyblue')
+                ax.set_yticks(y_pos)
+                ax.set_yticklabels(feature_importance_df['feature'])
+                ax.set_xlabel('Importance')
+                ax.set_title(f'Importance des Caractéristiques ({model_type})')
+                plt.tight_layout()
+                st.pyplot(fig)
+                
+                # Afficher le tableau des importances
+                st.write("**Valeurs d'importance détaillées:**")
+                st.dataframe(feature_importance_df.sort_values('importance', ascending=False))
+            else:
+                st.info("L'importance des caractéristiques n'est pas disponible pour ce modèle.")
+        else:
+            st.info("L'importance des caractéristiques native n'est disponible que pour les modèles Forêt Aléatoire et Arbre de Décision.")
+            
+        # Pour la régression logistique, on peut afficher les coefficients
+        if model_type == "Régression Logistique":
+            if hasattr(model, 'coef_'):
+                coefficients = model.coef_[0]
+                
+                # Créer un DataFrame pour les coefficients
+                coef_df = pd.DataFrame({
+                    'feature': feature_names,
+                    'coefficient': coefficients
+                }).sort_values('coefficient', ascending=True)
+                
+                # Tracer le graphique
+                fig, ax = plt.subplots(figsize=(10, 8))
+                y_pos = np.arange(len(coef_df))
+                colors = ['red' if x < 0 else 'green' for x in coef_df['coefficient']]
+                ax.barh(y_pos, coef_df['coefficient'], color=colors, alpha=0.7)
+                ax.set_yticks(y_pos)
+                ax.set_yticklabels(coef_df['feature'])
+                ax.set_xlabel('Coefficient')
+                ax.set_title('Coefficients de la Régression Logistique')
+                ax.axvline(x=0, color='black', linestyle='-', alpha=0.3)
+                plt.tight_layout()
+                st.pyplot(fig)
+                
+                # Afficher le tableau des coefficients
+                st.write("**Coefficients détaillés:**")
+                st.dataframe(coef_df.sort_values('coefficient', ascending=False))
+
+# Information sur les modèles
+st.sidebar.markdown("---")
+st.sidebar.header("À propos des modèles")
+st.sidebar.markdown("""
+**Forêt Aléatoire**: Ensemble d'arbres de décision, robuste et précis  
+**Régression Logistique**: Modèle linéaire, facile à interpréter  
+**Arbre de Décision**: Modèle unique, très interprétable
+""")
