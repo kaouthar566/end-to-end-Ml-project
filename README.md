@@ -47,7 +47,7 @@ pip
 Install Dependencies
 pip install -r requirements.txt
 
-##Deployment (Streamlit App)
+Deployment (Streamlit App)
 
 streamlit run app/streamlit_app.py
 ## Final result 
