@@ -56,3 +56,5 @@ To solve this project I built 3 machine learning models: logistic regression, de
 
 Maximum recall (75.91%) - catching as many positive cases as possible
 This is crucial in scenarios like , fraud detection where missing a positive case is more costly than a false alarm
+## Author 
+**KHAYET KAWTHAR**
