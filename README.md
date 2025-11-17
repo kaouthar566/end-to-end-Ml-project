@@ -39,5 +39,20 @@ High rates of loan defaults due to overlooked risk factors. Inefficient resource
 ● CLNO: Number of existing credit lines
 
 ● DEBTINC: Debt-to-income ratio (all monthly debt payments divided by gross monthly income. This number is one of the ways lenders measure a borrower’s ability to manage the monthly payments to repay the money they plan to borrow)
+## Installation & Setup
+Prerequisites
+Python 3.8+
+pip 
 
+Install Dependencies
+pip install -r requirements.txt
 
+##Deployment (Streamlit App)
+
+streamlit run app/streamlit_app.py
+## Final result 
+Final results
+To solve this project I built 3 machine learning models: logistic regression, decision tree and random forest (baseline and tuned versions). The best performance was obtained by the tuned decision tree model:
+
+Maximum recall (75.91%) - catching as many positive cases as possible
+This is crucial in scenarios like , fraud detection where missing a positive case is more costly than a false alarm
