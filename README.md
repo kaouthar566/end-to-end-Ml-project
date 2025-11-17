@@ -11,10 +11,11 @@ High rates of loan defaults due to overlooked risk factors. Inefficient resource
 #### The proposed solution is to develop a Loan Default Prediction model using machine learning. This model will: Analyze historical loan data and borrower profiles to identify patterns associated with defaults. Provide risk scores or classifications for each applicant to support informed lending decisions. Reduce financial losses and improve portfolio quality by flagging high-risk borrowers early. Enhance efficiency by automating part of the credit assessment process, reducing human error and bias.
 
 ### Data
-#### Source: HMEQ / Kaggle
-Size: 5,960 registers
-Features: 13 feautures
-Target: Binary (0 = No Default, 1 = Default)
+#### 
+- Source: HMEQ / Kaggle
+- Size: 5,960 registers
+- Features: 13 feautures
+- Target: Binary (0 = No Default, 1 = Default)
 
 ### Features Description 
 ● BAD: 1 = Client defaulted on loan, 0 = loan repaid
